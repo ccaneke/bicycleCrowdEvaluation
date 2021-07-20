@@ -8,5 +8,8 @@ import (
 
 func main() {
 	var responses = bicycleCrowdEvaluator.Decode("/home/DeepLearning/Downloads/anonymized_project.json")
-	fmt.Println(responses)
+
+	var numAnnotators = bicycleCrowdEvaluator.NumAnnotators(responses)
+
+	fmt.Println(numAnnotators)
 }
