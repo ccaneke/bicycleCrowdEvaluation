@@ -2,25 +2,43 @@ package bicycleCrowdEvaluator
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
+	"math"
+	"sort"
+	"strings"
 )
 
 type AnnotatorInfo struct {
-	NumAnnotators            int
-	AverageAnnotationTimes   int
-	MinAnnotationTimes       int
-	MaxAnnotationTimes       int
-	AnnotatorResults         map[string]int
-	HighlyDisagreedQuestions []struct {
-		id  string
-		url string
-	}
+	NumAnnotators          int
+	AverageAnnotationTimes int
+	MinAnnotationTimes     int
+	MaxAnnotationTimes     int
+	AnnotatorResults       map[string]int
 }
 
 type Pair struct {
 	TaskOutput map[string]interface{}
 	ImageUrl   string
+}
+
+type Response struct {
+	CantSolve   int
+	CorruptData int
+}
+
+type ReferenceDataSetResult struct {
+	IsBicycle    int
+	IsNotBicycle int
+}
+
+type Votes struct {
+	Yes int
+	No  int
+}
+
+type DisagreedQuestion struct {
+	ImageUrl string
+	Votes    Votes
 }
 
 func Decode(filename string) map[string]interface{} {
@@ -38,14 +56,12 @@ func Decode(filename string) map[string]interface{} {
 	return responses
 }
 
-func Annotators(responses map[string]interface{}) AnnotatorInfo {
+func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
 
 	var m map[string]int = make(map[string]int)
 	var s []int
 	var m2 map[string][]Pair = make(map[string][]Pair)
-	//Todo: Maybe rename all instances of v to child or children or better yet firstChild like
-	// *html.Node.FirstChild or just v. Update: just leave k and v the way they are named here,
-	// in order to avoid confusion and ambiquity.
+
 	for _, v1 := range responses {
 		for _, v2 := range v1.(map[string]interface{}) {
 			for k3, v3 := range v2.(map[string]interface{}) {
@@ -93,59 +109,25 @@ func Annotators(responses map[string]interface{}) AnnotatorInfo {
 		}
 	}
 
-	var highlyDisagreedQs []struct {
-		id  string
-		url string
-	}
-	for k, v := range m2 {
-		// Note/Todo: to compare each annotators output I could easily use a nested for loop that loops
-		// over m2
+	var response Response = Response{}
 
-		// Note that there are 10 task_output, even though for now I am only using the 0th and 1st
-		// task_output
-		var url string
-
+	for _, v := range m2 {
 		for _, v := range v {
-			if v.ImageUrl != "" {
-				url = v.ImageUrl
+			var cantSolve bool = v.TaskOutput["cant_solve"].(bool)
+			corruptData, ok := v.TaskOutput["corrupt_data"].(bool)
+
+			if cantSolve {
+				response.CantSolve += 1
+			} else if ok && corruptData {
+				response.CorruptData += 1
 			}
-		}
-
-		var one Pair = v[0]
-		var two Pair = v[1]
-
-		if one.TaskOutput["answer"].(string) != two.TaskOutput["answer"].(string) {
-			highlyDisagreedQs = append(highlyDisagreedQs, struct {
-				id  string
-				url string
-			}{k, url})
-		} else if one.TaskOutput["cant_solve"].(bool) != two.TaskOutput["cant_solve"].(bool) {
-			highlyDisagreedQs = append(highlyDisagreedQs, struct {
-				id  string
-				url string
-			}{k, url})
-		} else {
-			t1, ok1 := one.TaskOutput["corrupt_data"].(bool)
-			t2, ok2 := two.TaskOutput["corrupt_data"].(bool)
-
-			if ok1 && ok2 {
-				if t1 != t2 {
-					highlyDisagreedQs = append(highlyDisagreedQs, struct {
-						id  string
-						url string
-					}{k, url})
-				}
-			}
-
 		}
 	}
-
-	fmt.Println(highlyDisagreedQs)
 
 	var annotatorInfo AnnotatorInfo = AnnotatorInfo{NumAnnotators: len(m),
 		AverageAnnotationTimes: Average(s, len(m)), MinAnnotationTimes: Min(s),
-		MaxAnnotationTimes: Max(s), AnnotatorResults: m, HighlyDisagreedQuestions: highlyDisagreedQs}
-	return annotatorInfo
+		MaxAnnotationTimes: Max(s), AnnotatorResults: m}
+	return annotatorInfo, response
 }
 
 func Max(s []int) int {
@@ -182,4 +164,203 @@ func Average(s []int, n int) int {
 	var average = sum / n
 
 	return average
+}
+
+func ReferenceDataSetDistribution(file string) ReferenceDataSetResult {
+	var m map[string]interface{} = Decode(file)
+	var referenceDataSetResult ReferenceDataSetResult = ReferenceDataSetResult{}
+
+	for _, v := range m {
+		m := v.(map[string]interface{})
+		v, ok := m["is_bicycle"].(bool)
+		if ok {
+			if v {
+				referenceDataSetResult.IsBicycle += 1
+			} else {
+				referenceDataSetResult.IsNotBicycle += 1
+			}
+		}
+	}
+
+	return referenceDataSetResult
+}
+
+func GetReferenceSet(file string) map[string]map[string]interface{} {
+	var m map[string]interface{} = Decode(file)
+
+	var m2 map[string]map[string]interface{} = make(map[string]map[string]interface{})
+	for k, v := range m {
+		m2[k] = v.(map[string]interface{})
+	}
+
+	return m2
+}
+
+func GetAnnotators(file string) map[string]map[string]string {
+	var m map[string]interface{} = Decode(file)
+	var imageToAnnotatorResponses map[string]map[string]string = /*map[string]interface{}*/
+	make(map[string]map[string]string)
+
+	for _, v := range m {
+		var v = v.(map[string]interface{})
+		for _, v := range v {
+			var v = v.(map[string]interface{})
+			for k, v := range v {
+				if k == "results" {
+					var v = v.(map[string]interface{})
+					for _, v := range v {
+						var v = v.(map[string]interface{})
+						for _, v := range v {
+							v, ok := v.([]interface{})
+
+							if ok {
+								for _, v := range v {
+									var imageUrl, annotator, answer string
+
+									if v, ok := v.(map[string]interface{})["task_input"].(map[string]interface{})["image_url"].(string); ok {
+										imageUrl = v
+									}
+
+									if v, ok := v.(map[string]interface{})["user"].(map[string]interface{})["vendor_user_id"]; ok {
+										annotator = v.(string)
+									}
+
+									if v, ok := v.(map[string]interface{})["task_output"].(map[string]interface{})["answer"]; ok {
+										answer = v.(string)
+									}
+
+									imageToAnnotatorResponses[imageUrl] = map[string]string{annotator: answer}
+								}
+
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return imageToAnnotatorResponses
+}
+
+func TheGoodTheBadAnnotators(reference map[string]map[string]interface{},
+	annotators map[string]map[string]string) (map[string]int, map[string]int) {
+	var correct []string
+	var wrong []string
+	var timesCorrect map[string]int = make(map[string]int)
+	var timesWrong map[string]int = make(map[string]int)
+
+	for k1, v1 := range reference {
+		for k2, v2 := range annotators {
+			if strings.Contains(k2, k1) {
+				for k, v := range v2 {
+					if v == "yes" && v1["is_bicycle"].(bool) {
+						correct = append(correct, k)
+					} else if v == "no" && v1["is_bicycle"] == false {
+						correct = append(correct, k)
+					} else {
+						wrong = append(wrong, k)
+					}
+				}
+			}
+		}
+	}
+
+	for _, v := range correct {
+		timesCorrect[v] += 1
+	}
+
+	for _, v := range wrong {
+		timesWrong[v] += 1
+	}
+
+	return timesCorrect, timesWrong
+}
+
+func Deduplicate(in []string) []string {
+	sort.Strings(in)
+	j := 0
+	for i := 1; i < len(in); i++ {
+		if in[j] == in[i] {
+			continue
+		}
+		j++
+		in[j] = in[i]
+	}
+	result := in[:j+1]
+	return result
+}
+
+func Scores(timesCorrect map[string]int, timesWrong map[string]int) map[string]float32 {
+	var scores map[string]float32 = make(map[string]float32)
+
+	for k, v := range timesCorrect {
+		scores[k] = (float32(v) / float32((v + timesWrong[k]))) * 100
+	}
+
+	return scores
+}
+
+func Rank(scores map[string]float32) (map[string]float32, map[string]float32) {
+	var goodAnnotators map[string]float32 = make(map[string]float32)
+	var badAnnotators map[string]float32 = make(map[string]float32)
+
+	for k, v := range scores {
+		// Arbitrary pass mark
+		if v > 93 {
+			goodAnnotators[k] = v
+		} else {
+			badAnnotators[k] = v
+		}
+	}
+
+	return goodAnnotators, badAnnotators
+}
+
+func Contains(s []Pair, pair Pair) {
+
+}
+
+func QuestionYesNoAnswers(file string) map[string]*Votes {
+	var annotatorResponses map[string]interface{} = Decode(file)
+	var m map[string]*Votes = make(map[string]*Votes)
+
+	var rootNode map[string]interface{} = annotatorResponses["results"].(map[string]interface{})
+	results1, ok := rootNode["root_node"].(map[string]interface{})
+
+	if ok {
+		for _, v := range results1["results"].(map[string]interface{}) {
+			for _, v := range v.(map[string]interface{}) {
+				temp, ok := v.([]interface{})
+
+				if ok {
+					var votes *Votes = &Votes{}
+					for i := 0; i < len(temp); i++ {
+						var imageUrl = v.([]interface{})[i].(map[string]interface{})["task_input"].(map[string]interface{})["image_url"].(string)
+						m[imageUrl] = votes
+
+						if v.([]interface{})[i].(map[string]interface{})["task_output"].(map[string]interface{})["answer"] == "yes" {
+							m[imageUrl].Yes += 1
+						} else {
+							m[imageUrl].No += 1
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return m
+}
+
+func HighDisagreedQuestions(yesNoAnswers map[string]*Votes) []DisagreedQuestion {
+	var s []DisagreedQuestion
+	for k, v := range yesNoAnswers {
+		// Absolute difference less than average of yes and no answers for specific question means
+		// annotators highly disagree
+		if int((math.Abs(float64((*v).Yes) - float64((*v).No)))) < ((*v).Yes+(*v).No)/2 {
+			s = append(s, DisagreedQuestion{k, *v})
+		}
+	}
+	return s
 }
