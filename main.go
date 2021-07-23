@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	var responses = bicycleCrowdEvaluator.Decode("/home/DeepLearning/Downloads/anonymized_project.json")
+	var responses = bicycleCrowdEvaluator.Decode("/tmp/anonymized_project.json")
 
 	annotatorsInfo, response := bicycleCrowdEvaluator.Annotators(responses)
 
@@ -17,7 +17,7 @@ func main() {
 
 	//fmt.Println(annotatorsInfo)
 
-	var yesNoAnswers map[string]*bicycleCrowdEvaluator.Votes = bicycleCrowdEvaluator.QuestionYesNoAnswers("/home/DeepLearning/Downloads/anonymized_project.json")
+	var yesNoAnswers map[string]*bicycleCrowdEvaluator.Votes = bicycleCrowdEvaluator.QuestionYesNoAnswers("/tmp/anonymized_project.json")
 
 	fmt.Println()
 	fmt.Println()
@@ -33,19 +33,19 @@ func main() {
 		"lower annotation times (duration), and of course didn't not answer yes or no")
 
 	fmt.Println("Task 3:")
-	var referenceDataSetDistribution bicycleCrowdEvaluator.ReferenceDataSetResult = bicycleCrowdEvaluator.ReferenceDataSetDistribution("/home/DeepLearning/Downloads/references.json")
+	var referenceDataSetDistribution bicycleCrowdEvaluator.ReferenceDataSetResult = bicycleCrowdEvaluator.ReferenceDataSetDistribution("/tmp/references.json")
 
 	fmt.Println("IsBicycle", referenceDataSetDistribution.IsBicycle, "IsNotBicycle",
 		referenceDataSetDistribution.IsNotBicycle, "\nReference Dataset is balanced because the number"+
 			" of images of bicycles and images that are not bicycles are approximately the same")
 
 	fmt.Println("Getting ReferenceSet...")
-	var referenceSet = bicycleCrowdEvaluator.GetReferenceSet("/home/DeepLearning/Downloads/references.json")
+	var referenceSet = bicycleCrowdEvaluator.GetReferenceSet("/tmp/references.json")
 
 	fmt.Println()
 
 	fmt.Println("Getting Annotators...")
-	var annotators = bicycleCrowdEvaluator.GetAnnotators("/home/DeepLearning/Downloads/anonymized_project.json")
+	var annotators = bicycleCrowdEvaluator.GetAnnotators("/tmp/anonymized_project.json")
 
 	timesCorrect, timesWrong := bicycleCrowdEvaluator.TheGoodTheBadAnnotators(referenceSet, annotators)
 
