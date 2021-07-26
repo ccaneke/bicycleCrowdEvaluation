@@ -2,6 +2,7 @@ package bicycleCrowdEvaluator
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"sort"
@@ -19,6 +20,7 @@ type AnnotatorInfo struct {
 type Pair struct {
 	TaskOutput map[string]interface{}
 	ImageUrl   string
+	User       map[string]interface{}
 }
 
 type Response struct {
@@ -56,7 +58,7 @@ func Decode(filename string) map[string]interface{} {
 	return responses
 }
 
-func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
+func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response, []string, map[string][]Pair) {
 
 	var m map[string]int = make(map[string]int)
 	var s []int
@@ -69,8 +71,10 @@ func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
 					for k4, v4 := range v3.(map[string]interface{}) {
 						for k5, v5 := range v4.(map[string]interface{}) {
 							if k5 == "results" {
+								var tmp string
+								var user map[string]interface{} = make(map[string]interface{})
+								var taskOutput map[string]interface{} = make(map[string]interface{})
 								for _, v6 := range v5.([]interface{}) {
-									var tmp string
 									for k7, v7 := range v6.(map[string]interface{}) {
 										if k7 == "task_input" {
 											//Todo: rename kNew and VNew
@@ -83,6 +87,7 @@ func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
 										}
 
 										if k7 == "user" {
+											user = v7.(map[string]interface{})
 											for k8, v8 := range v7.(map[string]interface{}) {
 												if k8 == "vendor_user_id" {
 													m[v8.(string)] += 1
@@ -91,14 +96,25 @@ func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
 										}
 
 										if k7 == "task_output" {
+											taskOutput = v7.(map[string]interface{})
 											for k8, v8 := range v7.(map[string]interface{}) {
 												if k8 == "duration_ms" {
 													s = append(s, int(v8.(float64)))
 												}
 											}
 
-											m2[k4] = append(m2[k4], Pair{v7.(map[string]interface{}), tmp})
 										}
+
+									}
+									if user["vendor_user_id"].(string) == "annotator_11" {
+										if taskOutput["cant_solve"].(bool) {
+											fmt.Println("result:", taskOutput["cant_solve"].(bool))
+											fmt.Println("imageUrl:", tmp)
+										}
+									}
+
+									if len(taskOutput) != 0 && tmp != "" && len(user) != 0 {
+										m2[k4] = append(m2[k4], Pair{taskOutput, tmp, user})
 									}
 								}
 							}
@@ -110,24 +126,34 @@ func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
 	}
 
 	var response Response = Response{}
+	var cantSolveOrCorruptDataAnnotators []string
 
 	for _, v := range m2 {
 		for _, v := range v {
-			var cantSolve bool = v.TaskOutput["cant_solve"].(bool)
+			cantSolve, ok1 := v.TaskOutput["cant_solve"].(bool)
 			corruptData, ok := v.TaskOutput["corrupt_data"].(bool)
 
-			if cantSolve {
+			if ok1 && cantSolve {
 				response.CantSolve += 1
+				val, ok := v.User["vendor_user_id"].(string)
+				if ok {
+					cantSolveOrCorruptDataAnnotators = append(cantSolveOrCorruptDataAnnotators, val)
+				}
 			} else if ok && corruptData {
+				if val, ok := v.User["vendor_user_id"].(string); ok {
+					cantSolveOrCorruptDataAnnotators = append(cantSolveOrCorruptDataAnnotators, val)
+				}
 				response.CorruptData += 1
 			}
 		}
 	}
+	fmt.Println()
+	var distinct []string = Deduplicate(cantSolveOrCorruptDataAnnotators)
 
 	var annotatorInfo AnnotatorInfo = AnnotatorInfo{NumAnnotators: len(m),
-		AverageAnnotationTimes: Average(s, len( /*m*/ s)), MinAnnotationTimes: Min(s),
+		AverageAnnotationTimes: Average(s, len(s)), MinAnnotationTimes: Min(s),
 		MaxAnnotationTimes: Max(s), AnnotatorResults: m}
-	return annotatorInfo, response
+	return annotatorInfo, response, distinct, m2
 }
 
 func Max(s []int) int {
@@ -198,8 +224,7 @@ func GetReferenceSet(file string) map[string]map[string]interface{} {
 
 func GetAnnotators(file string) map[string]map[string]string {
 	var m map[string]interface{} = Decode(file)
-	var imageToAnnotatorResponses map[string]map[string]string = /*map[string]interface{}*/
-	make(map[string]map[string]string)
+	var imageToAnnotatorResponses map[string]map[string]string = make(map[string]map[string]string)
 
 	for _, v := range m {
 		var v = v.(map[string]interface{})
@@ -363,4 +388,25 @@ func HighDisagreedQuestions(yesNoAnswers map[string]*Votes) []DisagreedQuestion 
 		}
 	}
 	return s
+}
+
+func AverageTimeOfAnnotators(m map[string][]Pair, annotatorInfo AnnotatorInfo) map[string]float64 {
+	var m2 map[string]float64 = map[string]float64{}
+
+	for _, v := range m {
+		for _, v := range v {
+			if v.User["vendor_user_id"].(string) == "annotator_19" {
+				fmt.Println(v.TaskOutput["duration_ms"].(float64))
+			}
+			//if v.TaskOutput["duration_ms"].(float64) > 0 {
+			m2[v.User["vendor_user_id"].(string)] += v.TaskOutput["duration_ms"].(float64 /*int*/)
+			//}
+		}
+	}
+
+	for k, v := range m2 {
+		m2[k] = v / float64(annotatorInfo.AnnotatorResults[k])
+	}
+
+	return m2
 }
