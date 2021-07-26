@@ -125,7 +125,7 @@ func Annotators(responses map[string]interface{}) (AnnotatorInfo, Response) {
 	}
 
 	var annotatorInfo AnnotatorInfo = AnnotatorInfo{NumAnnotators: len(m),
-		AverageAnnotationTimes: Average(s, len(m)), MinAnnotationTimes: Min(s),
+		AverageAnnotationTimes: Average(s, len( /*m*/ s)), MinAnnotationTimes: Min(s),
 		MaxAnnotationTimes: Max(s), AnnotatorResults: m}
 	return annotatorInfo, response
 }
