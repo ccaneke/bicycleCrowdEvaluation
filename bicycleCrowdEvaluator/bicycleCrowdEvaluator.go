@@ -44,14 +44,14 @@ type DisagreedQuestion struct {
 }
 
 func Decode(filename string) map[string]interface{} {
-	body, err := ioutil.ReadFile(filename)
+	b, err := ioutil.ReadFile(filename)
 	if err != nil {
 		panic(err)
 	}
 
 	var responses map[string]interface{}
 
-	if err := json.Unmarshal(body, &responses); err != nil {
+	if err := json.Unmarshal(b, &responses); err != nil {
 		panic(err)
 	}
 
